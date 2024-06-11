@@ -1,23 +1,28 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, render_template
+from flask_socketio import SocketIO, emit
 import whisper
-import tempfile
-import os
+import soundfile as sf
+import io
 
 app = Flask(__name__)
+socketio = SocketIO(app)
 model = whisper.load_model("base")
 
+
 @app.route('/')
-def index():
+def home():
     return render_template('index.html')
 
-@app.route('/transcribe', methods=['POST'])
-def transcribe():
-    audio_file = request.files['file']
-    with tempfile.NamedTemporaryFile(delete=False) as temp:
-        audio_file.save(temp.name)
-        result = model.transcribe(temp.name)
-        os.remove(temp.name)
-    return jsonify(result["text"])
+@socketio.on('connect')
+def test_connect():
+    print('Client connected')
+
+@socketio.on('message')
+def handle_message(message):
+    # Assuming message is an audio chunk
+    data, samplerate = sf.read(io.BytesIO(message))
+    result = model.transcribe(data, samplerate=samplerate)
+    emit('transcription', {'text': result["text"]})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000)

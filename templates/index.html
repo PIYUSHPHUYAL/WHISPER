@@ -3,96 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Speech to Text</title>
-    <style>
-        /* Reset some default styles */
-        body, h1, p, button {
-            margin: 0;
-            padding: 0;
-        }
-
-        /* Set background and font styles */
-        body {
-            background: linear-gradient(45deg, #1c1c1c, #333333);
-            color: #fff;
-            font-family: 'Montserrat', sans-serif;
-            text-align: center;
-            padding: 2rem;
-        }
-
-        /* Style the heading */
-        h1 {
-            font-size: 3rem;
-            margin-bottom: 2rem;
-            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
-            letter-spacing: 2px;
-        }
-
-        /* Style the button */
-        button {
-            background-color: transparent;
-            color: #fff;
-            border: 2px solid #fff;
-            padding: 1rem 2rem;
-            font-size: 1.2rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            border-radius: 30px;
-        }
-
-        button:hover {
-            background-color: #fff;
-            color: #333;
-        }
-
-        /* Style the result text */
-        p {
-            font-size: 1.5rem;
-            margin-top: 3rem;
-            line-height: 1.8;
-            text-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
-        }
-    </style>
+    <title>Live Transcription</title>
 </head>
 <body>
-    <h1>Live Speech to Text</h1>
-    <button id="record">Record</button>
-    <p id="result"></p>
+    <h1>Live Transcription</h1>
+    <button id="start">Start Recording</button>
+    <button id="stop" disabled>Stop Recording</button>
+    <p id="transcription">Transcription: </p>
 
     <script>
+        let socket = new WebSocket("ws://localhost:5000");
         let mediaRecorder;
-        let audioChunks = [];
 
-        document.getElementById('record').addEventListener('click', async () => {
-            if (mediaRecorder && mediaRecorder.state === "recording") {
-                mediaRecorder.stop();
-                return;
-            }
-
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            
-            mediaRecorder.ondataavailable = event => {
-                audioChunks.push(event.data);
-            };
-
-            mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                audioChunks = [];
-                const formData = new FormData();
-                formData.append('file', audioBlob, 'audio.wav');
-
-                const response = await fetch('/transcribe', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const text = await response.json();
-                document.getElementById('result').innerText = text;
-            };
-
-            mediaRecorder.start();
+        document.getElementById('start').addEventListener('click', function() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.ondataavailable = function(event) {
+                        if (event.data.size > 0) {
+                            socket.send(event.data);
+                        }
+                    };
+                    mediaRecorder.start(250); // Start recording and send data every 250ms
+                    document.getElementById('stop').disabled = false;
+                    document.getElementById('start').disabled = true;
+                })
+                .catch(console.error);
         });
+
+        document.getElementById('stop').addEventListener('click', function() {
+            mediaRecorder.stop();
+            document.getElementById('stop').disabled = true;
+            document.getElementById('start').disabled = false;
+        });
+
+        socket.onmessage = function(event) {
+            document.getElementById('transcription').textContent = 'Transcription: ' + event.data;
+        };
     </script>
 </body>
 </html>
