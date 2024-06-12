@@ -3,42 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Transcription</title>
+    <title>Whisper Speech-to-Text</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-    <h1>Live Transcription</h1>
-    <button id="start">Start Recording</button>
-    <button id="stop" disabled>Stop Recording</button>
-    <p id="transcription">Transcription: </p>
-
+    <div class="container">
+        <h1>Whisper Speech-to-Text</h1>
+        <button id="recordButton">Record</button>
+        <button id="stopButton" disabled>Stop</button>
+        <div id="result"></div>
+    </div>
     <script>
-        let socket = new WebSocket("ws://localhost:5000");
         let mediaRecorder;
+        let audioChunks = [];
 
-        document.getElementById('start').addEventListener('click', function() {
-            navigator.mediaDevices.getUserMedia({ audio: true })
-                .then(stream => {
-                    mediaRecorder = new MediaRecorder(stream);
-                    mediaRecorder.ondataavailable = function(event) {
-                        if (event.data.size > 0) {
-                            socket.send(event.data);
+        document.getElementById('recordButton').onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = async () => {
+                    const base64String = reader.result;
+                    const response = await fetch('{{ url_for("transcribe") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ audio_data: base64String }),
+                    });
+
+                    const resultDiv = document.getElementById('result');
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.text) {
+                            resultDiv.textContent = `Transcription: ${data.text}`;
+                        } else if (data.error) {
+                            resultDiv.textContent = `Error: ${data.error}`;
                         }
-                    };
-                    mediaRecorder.start(250); // Start recording and send data every 250ms
-                    document.getElementById('stop').disabled = false;
-                    document.getElementById('start').disabled = true;
-                })
-                .catch(console.error);
-        });
+                    } else {
+                        resultDiv.textContent = 'Failed to transcribe the audio file.';
+                    }
+                };
+                audioChunks = [];
+            };
+            mediaRecorder.start();
+            document.getElementById('recordButton').disabled = true;
+            document.getElementById('stopButton').disabled = false;
+        };
 
-        document.getElementById('stop').addEventListener('click', function() {
+        document.getElementById('stopButton').onclick = () => {
             mediaRecorder.stop();
-            document.getElementById('stop').disabled = true;
-            document.getElementById('start').disabled = false;
-        });
-
-        socket.onmessage = function(event) {
-            document.getElementById('transcription').textContent = 'Transcription: ' + event.data;
+            document.getElementById('recordButton').disabled = false;
+            document.getElementById('stopButton').disabled = true;
         };
     </script>
 </body>
